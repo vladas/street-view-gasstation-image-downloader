@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Street view places navigation</title>
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      #map {
+        height: 30%;
+        width: 100%;
+      }
+      #pano {
+        height: 70%;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+  <div id="controls"><button id="prevBtn">Prev</button><span id="loaded"></span><button id="nextBtn">Next</button></div>
+
+    <!-- attributions-container -->
+    <div id="attributions" style="background:#f1f1f1">
+        You'll see here the attributions when there are any
+    </div>
+
+    <div id="map"></div>
+    <div id="pano"></div>
+
+    <script type="text/javascript">
+
+        var placeIndex  = -1;
+
+        function findPlaces(searchSpec) {
+
+            let service = new google.maps.places.PlacesService(
+                document.getElementById('attributions')//attributions-container
+            );
+
+            let allPlaces = [];
+
+            const promisedResult = new Promise((resolve, reject) => {
+                processResults = function(results, status, pagination) {
+                    if (status == google.maps.places.PlacesServiceStatus.OK) {
+
+                        allPlaces = allPlaces.concat(results);
+
+                        if (pagination.hasNextPage) {
+                            setTimeout(() => pagination.nextPage(), 1000);
+                        } else {
+                            console.log("has no next");
+                            resolve(allPlaces);
+                        }
+                    } else {
+                        reject();
+                    }
+                };
+
+                //send a query
+                service.textSearch(searchSpec, processResults);
+
+            });
+
+            return promisedResult;
+
+        }
+
+        function jumpTo(index, places) {
+
+            let place = places[index];
+
+            if (place == undefined) {
+                throw Error("place not found");
+            }
+            placeIndex = index;
+
+            const first = index < 1;
+            const last = (index + 1) >= places.length;
+
+            if (first) {
+                document.getElementById("prevBtn").disabled = true;
+            } else {
+                document.getElementById("prevBtn").disabled = false;
+            }
+
+            if (last) {
+                document.getElementById("nextBtn").disabled = true;
+            } else {
+                document.getElementById("nextBtn").disabled = false;
+            }
+
+            showMap(place.geometry.location);
+
+            document.getElementById("loaded").innerHTML = " Showing " + (placeIndex + 1) + " from " + places.length + " ";
+
+        }
+
+        function jumpToPrev(places) {
+            jumpTo(placeIndex - 1, places);
+        }
+
+        function jumpToNext(places) {
+            jumpTo(placeIndex + 1, places);
+        }
+
+        function showMap(position) {
+            var map = new google.maps.Map(document.getElementById('map'), {
+                center: position,
+                zoom: 17
+            });
+
+            var panorama = new google.maps.StreetViewPanorama(
+                document.getElementById('pano'), {
+                    position: position
+                });
+
+            panorama.addListener('pano_changed', function (e) {
+                panorama.setPov(panorama.getPhotographerPov());
+            });
+
+            map.setStreetView(panorama);
+        }
+
+        function initialize() {
+
+
+            document.getElementById("loaded").innerHTML = "Loading...";
+            document.getElementById("prevBtn").disabled = true;
+            document.getElementById("nextBtn").disabled = true;
+
+
+            findPlaces({query: 'near Trondheim', type: 'gas_station'}).then(places => {
+
+                if (places.length > 0) {
+                    jumpTo(0, places);
+                }
+
+                document.getElementById("prevBtn").addEventListener("click", () => jumpToPrev(places));
+                document.getElementById("nextBtn").addEventListener("click", () => jumpToNext(places));
+
+            });
+        }
+    </script>
+
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places&callback=initialize">
+    </script>
+  </body>
+</html>
+

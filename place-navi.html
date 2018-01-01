@@ -9,18 +9,26 @@
         margin: 0;
         padding: 0;
       }
+      #controls {
+        height: 4%;
+        width: 100%;
+      }
       #map {
-        height: 30%;
+        height: 20%;
         width: 100%;
       }
       #pano {
-        height: 70%;
+        height: 38%;
+        width: 100%;
+      }
+      #pano_back {
+        height: 38%;
         width: 100%;
       }
     </style>
   </head>
   <body>
-  <div id="controls"><button id="prevBtn">Prev</button><span id="loaded"></span><button id="nextBtn">Next</button></div>
+  <div id="controls"><button id="prevBtn">Prev</button> <span id="loaded"></span> <button id="nextBtn">Next</button> <span id="name"></span></div>
 
     <!-- attributions-container -->
     <div id="attributions" style="background:#f1f1f1">
@@ -29,6 +37,7 @@
 
     <div id="map"></div>
     <div id="pano"></div>
+    <div id="pano_back"></div>
 
     <script type="text/javascript">
 
@@ -94,7 +103,10 @@
 
             showMap(place.geometry.location);
 
-            document.getElementById("loaded").innerHTML = " Showing " + (placeIndex + 1) + " from " + places.length + " ";
+            document.getElementById("loaded").innerHTML = " Showing " + (placeIndex + 1)
+                + " from " + places.length;
+
+            document.getElementById("name").innerHTML = place.name + " " + place.formatted_address;
 
         }
 
@@ -109,7 +121,7 @@
         function showMap(position) {
             var map = new google.maps.Map(document.getElementById('map'), {
                 center: position,
-                zoom: 17
+                zoom: 16
             });
 
             var panorama = new google.maps.StreetViewPanorama(
@@ -117,8 +129,22 @@
                     position: position
                 });
 
+            var backViewPanorama = new google.maps.StreetViewPanorama(
+                document.getElementById('pano_back'), {
+                    position: position
+                });
+
             panorama.addListener('pano_changed', function (e) {
-                panorama.setPov(panorama.getPhotographerPov());
+                let pov = panorama.getPhotographerPov();
+                pov.pitch += 5;
+
+                let backwardsPov = {
+                    heading: pov.heading - 180,
+                    pitch: pov.pitch
+                };
+                panorama.setPov(pov);
+                backViewPanorama.setPosition(panorama.getPosition());
+                backViewPanorama.setPov(backwardsPov);
             });
 
             map.setStreetView(panorama);

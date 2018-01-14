@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gas station crawler</title>
+
+    <script src="placefinder.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/4.6.2/firebase.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/4.6.2/firebase-firestore.js"></script>
+</head>
+<body>
+<!-- attributions-container -->
+<div id="attributions" style="background:#f1f1f1">
+    You'll see here the attributions when there are any
+</div>
+
+<script>
+    function initialize() {
+
+        firebase.initializeApp({
+            apiKey: "",
+            authDomain: "gas-station-imag-1514320161070.firebaseapp.com",
+            projectId: 'gas-station-imag-1514320161070'
+        });
+        // Initialize Cloud Firestore through Firebase
+        let db = firebase.firestore();
+
+        let lastIndexDocRef = db.collection("crawling_status").doc("last_searched_location");
+        let locationsToSearchRef = db.collection("locations_to_search");
+        let placesRef = db.collection("places");
+
+
+        let allPlaceIdsPromise = new Promise((resolve, reject) => {
+            let allPlaceIds = [];
+            placesRef.get().then(querySnapshot => {
+                querySnapshot.forEach(placeDoc => allPlaceIds.push(placeDoc.id));
+                resolve(allPlaceIds);
+            });
+        });
+
+
+        async function buildPlacesRepository(allPlaceIdsPromise) {
+            console.log("buildPlacesRepo")
+            let repo = await allPlaceIdsPromise
+                .then(allPlaceIds => {
+                    return new placefinder.CachedPlacesRepositoryDecorator(
+                        new placefinder.FireStorePlacesRepository(placesRef),
+                        allPlaceIds
+                    );
+                });
+
+            return repo;
+        }
+
+        let placesRepositoryPromise = buildPlacesRepository(allPlaceIdsPromise);
+
+        placesRepositoryPromise
+            .then(function(placesRepository) {
+                return new placefinder.CrawlController(locationsToSearchRef, lastIndexDocRef, placesRepository)
+            })
+            .then(function(crawler) {
+                crawler.getLastSearchedIndex()
+                    .then(lastSearchedIndex => crawler.getNextLocationsToSearch(lastSearchedIndex))
+                    .then(function (locationsToSearch) {
+                        console.log("found locations: " + (locationsToSearch.docs.length+1));
+                        placefinder.loopWithSleep(locationsToSearch.docs, 6 * 1000, function(location) {
+                            crawler.searchLocation(location.data().name)
+                                .then(places => crawler.storePlaces(places))
+                                .then(() => crawler.markAsSearched(location))
+                                .catch(error => console.log("Failed: ", error))
+                        });
+                    })
+            });
+    }
+
+</script>
+
+
+<script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=&libraries=places&callback=initialize">
+</script>
+</body>
+</html>

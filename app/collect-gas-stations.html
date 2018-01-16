@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Street view places navigation</title>
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      #controls {
+        height: 4%;
+        width: 100%;
+      }
+      #map {
+        height: 20%;
+        width: 100%;
+      }
+      #pano {
+        height: 38%;
+        width: 100%;
+      }
+      #pano_back {
+        height: 38%;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+  <div id="controls"><button id="prevBtn">Prev</button> <span id="loaded"></span> <button id="nextBtn">Next</button> <span id="name"></span>
+  <a id="frontViewImageDownload" href="">Download front view</a> <a id="backViewImageDownload" href="">Download back view</a></div>
+
+    <!-- attributions-container -->
+    <div id="attributions" style="background:#f1f1f1">
+        You'll see here the attributions when there are any
+    </div>
+
+    <div id="map"></div>
+    <div id="pano"></div>
+    <div id="pano_back"></div>
+
+    <script type="text/javascript">
+
+        var placeIndex  = -1;
+
+        const funcWithApiKey = apiKey("");
+        const linkUpdaterWithKey = funcWithApiKey(updateLink);
+        const updateFrontViewLinkFromPanorama = linkUpdaterWithKey(document.getElementById('frontViewImageDownload'));
+        const updateBackViewLinkFromPanorama = linkUpdaterWithKey(document.getElementById('backViewImageDownload'));
+
+        const findNearestRoadsWithKey = funcWithApiKey(findNearestRoads);
+        
+
+        function apiKey(apiKey) {
+            return (cb) => cb(apiKey);
+        }
+
+        function updateLink(apiKey) {
+            return (element) => (panorama) => element.href = getDownloadLink(apiKey)(panorama)
+        }
+
+        function getDownloadLink(apiKey) {
+            return (panorama) => {
+                let pos = panorama.getPosition();
+                let pov = panorama.getPov();
+                return "https://maps.googleapis.com/maps/api/streetview?size=640x640&fov=60"
+                    + "&location="+pos.lat()+","+pos.lng()+"&heading="+pov.heading+"&pitch="+pov.pitch+"&key=" + apiKey;
+            }
+        }
+
+        function findNearestRoads(apiKey) {
+            return (position) => {
+                let url = "https://roads.googleapis.com/v1/nearestRoads?"
+                    + "points="+position.lat()+","+position.lng()+"&key=" + apiKey;
+                return fetch(url).then(response => {
+                    var contentType = response.headers.get("content-type");
+                    if(contentType && contentType.includes("application/json")) {
+                        return response.json();
+                    }
+                    throw new TypeError("Oops, we haven't got JSON!");
+                });
+            }
+        }
+
+        function findPlaces(searchSpec) {
+
+            let service = new google.maps.places.PlacesService(
+                document.getElementById('attributions')//attributions-container
+            );
+
+            let allPlaces = [];
+
+            const promisedResult = new Promise((resolve, reject) => {
+                processResults = function(results, status, pagination) {
+                    if (status == google.maps.places.PlacesServiceStatus.OK) {
+
+                        allPlaces = allPlaces.concat(results);
+
+                        if (pagination.hasNextPage) {
+                            setTimeout(() => pagination.nextPage(), 1000);
+                        } else {
+                            console.log("has no next");
+                            resolve(allPlaces);
+                        }
+                    } else {
+                        reject();
+                    }
+                };
+
+                //send a query
+                service.textSearch(searchSpec, processResults);
+
+            });
+            return promisedResult;
+        }
+
+        function jumpTo(index, places) {
+
+            let place = places[index];
+
+            if (place == undefined) {
+                throw Error("place not found");
+            }
+            placeIndex = index;
+
+            const first = index < 1;
+            const last = (index + 1) >= places.length;
+
+            if (first) {
+                document.getElementById("prevBtn").disabled = true;
+            } else {
+                document.getElementById("prevBtn").disabled = false;
+            }
+
+            if (last) {
+                document.getElementById("nextBtn").disabled = true;
+            } else {
+                document.getElementById("nextBtn").disabled = false;
+            }
+
+            showMap(place.geometry.location);
+
+            document.getElementById("loaded").innerHTML = " Showing " + (placeIndex + 1)
+                + " from " + places.length;
+
+            document.getElementById("name").innerHTML = place.name + " " + place.formatted_address;
+
+        }
+
+        function jumpToPrev(places) {
+            jumpTo(placeIndex - 1, places);
+        }
+
+        function jumpToNext(places) {
+            jumpTo(placeIndex + 1, places);
+        }
+
+        function showMap(position) {
+            var map = new google.maps.Map(document.getElementById('map'), {
+                center: position,
+                zoom: 16
+            });
+
+            findNearestRoadsWithKey(position).then(json => {
+                for (let index in json.snappedPoints) {
+                    let point = json.snappedPoints[index];
+                    let pos = {lat: point.location.latitude, lng: point.location.longitude}
+                    new google.maps.Marker({
+                        position: pos,
+                        map: map,
+                        icon: 'https://chart.apis.google.com/chart?chst=d_map_pin_icon&chld=cafe|FFFF00',
+                        title: 'Point: ' + point.placeId
+                    });
+                }
+            });
+
+            var panorama = new google.maps.StreetViewPanorama(
+                document.getElementById('pano'), {
+                    position: position
+                });
+
+            var backViewPanorama = new google.maps.StreetViewPanorama(
+                document.getElementById('pano_back'), {
+                    position: position
+                });
+
+            panorama.addListener('pano_changed', function (e) {
+                let pov = panorama.getPhotographerPov();
+                pov.pitch += 5;
+
+                let backwardsPov = {
+                    heading: pov.heading - 180,
+                    pitch: pov.pitch
+                };
+                panorama.setPov(pov);
+                backViewPanorama.setPosition(panorama.getPosition());
+                backViewPanorama.setPov(backwardsPov);
+            });
+
+            panorama.addListener('pano_changed', () => updateFrontViewLinkFromPanorama(panorama));
+            panorama.addListener('pov_changed', () => updateFrontViewLinkFromPanorama(panorama));
+
+            backViewPanorama.addListener('pano_changed', () => updateBackViewLinkFromPanorama(backViewPanorama));
+            backViewPanorama.addListener('pov_changed', () => updateBackViewLinkFromPanorama(backViewPanorama));
+
+            map.setStreetView(panorama);
+
+
+
+            map.addListener('dblclick', function(event) {
+                console.log('dbclick');
+                console.log(event);
+                placeMarker(event.latLng, panorama);
+            });
+
+            map.addListener('click', function(event) {
+                console.log('click');
+                console.log(event);
+            });
+        }
+
+
+        function placeMarker(location, map) {
+            var marker = new google.maps.Marker({
+                position: location,
+                icon: 'https://chart.apis.google.com/chart?chst=d_map_pin_icon&chld=cafe|FFFF00',
+                title: 'Gas station sign',
+                map: map
+            });
+        }
+
+        function initialize() {
+
+
+            document.getElementById("loaded").innerHTML = "Loading...";
+            document.getElementById("prevBtn").disabled = true;
+            document.getElementById("nextBtn").disabled = true;
+
+
+            findPlaces({query: 'near Trondheim', type: 'gas_station'}).then(places => {
+
+                if (places.length > 0) {
+                    jumpTo(0, places);
+                }
+
+                document.getElementById("prevBtn").addEventListener("click", () => jumpToPrev(places));
+                document.getElementById("nextBtn").addEventListener("click", () => jumpToNext(places));
+
+            });
+        }
+    </script>
+
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=&libraries=places&callback=initialize">
+    </script>
+  </body>
+</html>
+

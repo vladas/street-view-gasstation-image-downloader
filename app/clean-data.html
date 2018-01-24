@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gas stations in DB</title>
+
+    <script src="placefinder.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/4.6.2/firebase.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/4.6.2/firebase-firestore.js"></script>
+</head>
+<body>
+
+<script>
+
+    firebase.initializeApp({
+        apiKey: "",
+        authDomain: "gas-station-imag-1514320161070.firebaseapp.com",
+        projectId: 'gas-station-imag-1514320161070'
+    });
+    // Initialize Cloud Firestore through Firebase
+    let db = firebase.firestore();
+
+    let placesRef = db.collection("places");
+
+    function validGasStation(gasStationPlace) {
+        return gasStationPlace.formatted_address.search(/Norway/) > -1
+    }
+
+    placesRef.limit(10000).get().then(querySnapshot => {
+
+        let placesByAddress = new Map();
+
+        querySnapshot.forEach(function (placeDoc) {
+            let place = placeDoc.data();
+
+            if (placesByAddress.has(place.formatted_address)) {
+                placesByAddress.get(place.formatted_address).push(place);
+            } else {
+                placesByAddress.set(place.formatted_address, [place]);
+            }
+
+            if (!validGasStation(place)) {
+
+                let placeName = place.name + " " + place.formatted_address;
+                console.log(placeName);
+                placesRef.doc(placeDoc.id).delete().then(function () {
+                    console.log("Deleted: ", placeName);
+                }).catch(function(error) {
+                    console.error("Error removing document: ", error);
+                });
+            }
+        });
+
+        placesByAddress.forEach(function(places, address) {
+            if (places.length > 1) {
+                console.log("Duplicate: ", places.reduce(function (accumulator, currentValue) {
+                    return accumulator + (accumulator.length > 0 ? " | " : "") + currentValue.name;
+                }, ""));
+            }
+        });
+
+        console.log("Done!");
+    });
+
+</script>
+
+</body>
+</html>

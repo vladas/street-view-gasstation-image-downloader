@@ -63,12 +63,36 @@
                     .then(lastSearchedIndex => crawler.getNextLocationsToSearch(lastSearchedIndex))
                     .then(function (locationsToSearch) {
                         console.log("found locations: " + (locationsToSearch.docs.length+1));
-                        placefinder.loopWithSleep(locationsToSearch.docs, 6 * 1000, function(location) {
+
+
+                        function crawlLocations(locationsToSearch) {
+                            let originalLocationsToSearch = locationsToSearch.slice(0);
+                            let location = locationsToSearch.shift();
+
                             crawler.searchLocation(location.data().name)
                                 .then(places => crawler.storePlaces(places))
                                 .then(() => crawler.markAsSearched(location))
-                                .catch(error => console.log("Failed: ", error))
-                        });
+                                .then(() => setTimeout(function(){
+                                    crawlLocations(locationsToSearch)
+                                }, 2*1000))
+                                .catch(function (error) {
+                                    console.error("Failed: ", error);
+                                    console.info("Waiting and retrying: ", location.data().name);
+                                    setTimeout(function(){
+                                        crawlLocations(originalLocationsToSearch)
+                                    }, 5*60*1000);
+                                })
+                        }
+
+                        crawlLocations(locationsToSearch.docs);
+
+
+                        // placefinder.loopWithSleep(locationsToSearch.docs, 7 * 1000, function(location) {
+                        //     crawler.searchLocation(location.data().name)
+                        //         .then(places => crawler.storePlaces(places))
+                        //         .then(() => crawler.markAsSearched(location))
+                        //         .catch(error => console.log("Failed: ", error))
+                        // });
                     })
             });
     }

@@ -58,8 +58,8 @@
 
 
 
-        function buildStreetViewImageUrl(lat, lng, heading, pitch, apiKey) {
-            return "https://maps.googleapis.com/maps/api/streetview?size=640x640&fov=60"
+        function buildStreetViewImageUrl(lat, lng, heading, pitch, fov, apiKey) {
+            return "https://maps.googleapis.com/maps/api/streetview?size=640x640&fov=" + fov
                 + "&location=" + lat + "," + lng + "&heading=" + heading + "&pitch=" + pitch + "&key=" + apiKey;
         }
 
@@ -67,8 +67,12 @@
             return (position, pov) => {
 
 
-                return buildStreetViewImageUrl(position.lat, position.lng, pov.heading, pov.pitch, apiKey);
+                return buildStreetViewImageUrl(position.lat, position.lng, pov.heading, pov.pitch, convertZoomToFov(pov.zoom), apiKey);
             }
+        }
+
+        function convertZoomToFov(zoom) {
+            return 180 / Math.pow(2,zoom) ;
         }
 
         function fetchPOVs(limit = 100) {

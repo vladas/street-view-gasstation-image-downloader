@@ -130,7 +130,7 @@ let placefinder = new function() {
 
         searchLocation(location) {
             console.log("searching: " + location);
-            return placefinder.findPlaces({query: 'near ' + location, type: 'gas_station'});
+            return placefinder.findPlaces({query: 'near ' + location + ", Norway", type: 'gas_station'});
         }
 
         storePlaces(places) {

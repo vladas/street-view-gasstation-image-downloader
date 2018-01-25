@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Street view places navigation</title>
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+
+      #map {
+        height: 100%;
+        width: 100%;
+      }
+      .pano {
+        height: 100%;
+        width: 100%;
+      }
+
+      .wrapper {
+
+        height: 100%;
+        width: 99%;
+        display: grid;
+        grid-gap: 5px;
+        grid-template-columns: [first] 50% [second] 50% [end];
+        grid-template-rows: [row1-start] 55px [row2-start] 100px [row3-start] auto [row4-start] auto [last-line];
+      }
+      .controls {
+        grid-column: 1 / 3;
+        grid-row: 1;
+        background-color: beige;
+        width: 100%;
+      }
+      .map {
+        grid-column: 1 / 3;
+        grid-row: 2;
+      }
+      .sv-1 {
+        grid-column: 1;
+        grid-row: 3;
+      }
+      .sv-2 {
+        grid-column: 2;
+        grid-row: 3;
+      }
+      .sv-3 {
+        grid-column: 1;
+        grid-row: 4;
+      }
+      .sv-4 {
+        grid-column: 2;
+        grid-row: 4;
+      }
+    </style>
+
+    <script src="https://www.gstatic.com/firebasejs/4.6.2/firebase.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/4.6.2/firebase-firestore.js"></script>
+
+    <script
+            src="https://code.jquery.com/jquery-3.3.1.min.js"
+            integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+            crossorigin="anonymous"></script>
+
+    <!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+
+    <!-- Optional theme -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
+
+    <!-- Latest compiled and minified JavaScript -->
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+  </head>
+  <body>
+
+
+  <div class="modal fade bs-example-modal-lg" tabindex="-1" role="dialog" id="street-view-modal">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          Street view image
+        </div>
+        <div class="modal-body">
+          ...
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrapper">
+    <div class="controls">
+      <div id="controls"><button id="prevBtn">Prev [a]</button> <span id="loaded"></span> <button id="nextBtn">Next [d]</button> <span id="name"></span></div>
+      <a id="frontViewImageDownload" href="" downlaod>Download front view</a> <a id="backViewImageDownload" href="" download>Download back view</a>
+
+      <button id="reviewedToggle">Mark as reviewed [m]</button>
+      <button id="takeAFrontViewPicture">Take a front view picture [1]</button>
+      <button id="takeARearViewPicture">Take a rear view picture [2]</button>
+
+      <span>Images:</span> <span id="povs"></span>
+
+    </div>
+    <div class="map"><div id="map"></div></div>
+    <div class="sv-1"><div id="pano_front" class="pano"></div></div>
+    <div class="sv-2"><div id="pano_back" class="pano"></div></div>
+    <div class="sv-3"><div id="pano_left" class="pano"></div></div>
+    <div class="sv-4"><div id="pano_right" class="pano"></div></div>
+  </div>
+
+    <script type="text/javascript">
+
+        var placeIndex  = -1;
+
+        let frontPanorama;
+        let rearViewPanorama;
+
+        const funcWithApiKey = apiKey("");
+        const linkUpdaterWithKey = funcWithApiKey(updateLink);
+        const getStreetViewImageWithKey = funcWithApiKey(getStreetViewImageUrl);
+        const updateFrontViewLinkFromPanorama = linkUpdaterWithKey(document.getElementById('frontViewImageDownload'));
+        const updateBackViewLinkFromPanorama = linkUpdaterWithKey(document.getElementById('backViewImageDownload'));
+
+        firebase.initializeApp({
+            apiKey: "",
+            authDomain: "gas-station-imag-1514320161070.firebaseapp.com",
+            projectId: 'gas-station-imag-1514320161070'
+        });
+
+        // Initialize Cloud Firestore through Firebase
+        let db = firebase.firestore();
+        let placesRef = db.collection("places");
+
+        let reviewedToggleBtn = document.getElementById("reviewedToggle");
+        let takeAFrontViewPictureBtn = document.getElementById("takeAFrontViewPicture");
+        let takeARearViewPictureBtn = document.getElementById("takeARearViewPicture");
+        let povsHolder = document.getElementById("povs");
+
+
+        function apiKey(apiKey) {
+            return (cb) => cb(apiKey);
+        }
+
+        function updateLink(apiKey) {
+            return (element) => (panorama) => element.href = getDownloadLink(apiKey)(panorama)
+        }
+
+
+        function buildStreetViewImageUrl(lat, lng, heading, pitch, apiKey) {
+            return "https://maps.googleapis.com/maps/api/streetview?size=640x640&fov=60"
+                + "&location=" + lat + "," + lng + "&heading=" + heading + "&pitch=" + pitch + "&key=" + apiKey;
+        }
+
+        function getDownloadLink(apiKey) {
+            return (panorama) => {
+                let pos = panorama.getPosition();
+                let pov = panorama.getPov();
+
+                return buildStreetViewImageUrl(pos.lat(), pos.lng(), pov.heading, pov.pitch, apiKey);
+            }
+        }
+        function getStreetViewImageUrl(apiKey) {
+            return (position, pov) => {
+
+
+                return buildStreetViewImageUrl(position.lat, position.lng, pov.heading, pov.pitch, apiKey);
+            }
+        }
+
+        function fetchPlaces(limit = 100) {
+
+            const promisedResult = new Promise(function (resolve, reject) {
+                let allPlaces = [];
+                placesRef.limit(500).get().then(function (querySnapshot) {
+                    querySnapshot.forEach(function (placeDoc) {
+                        allPlaces.push(placeDoc.data())
+                    });
+                    resolve(allPlaces);
+                });
+            });
+            return promisedResult;
+        }
+
+        function reviewedClicked(places) {
+          let placeIndexClicked = placeIndex;
+          let place = places[placeIndexClicked];
+
+          reviewedToggleBtn.disabled = true;
+
+          toggleReviewed(placesRef.doc(place.place_id), !place.reviewed).then(function () {
+              reviewedToggleBtn.disabled = false;
+              places[placeIndexClicked].reviewed = !place.reviewed;
+              updateToggleReviewedBtnText(places[placeIndexClicked].reviewed);
+          });
+        }
+
+        function takeAFrontViewPictureClicked(places) {
+            takeAPanoPictureClicked(places, takeAFrontViewPictureBtn, frontPanorama);
+        }
+
+        function takeARearViewPictureClicked(places) {
+            takeAPanoPictureClicked(places, takeARearViewPictureBtn, rearViewPanorama);
+        }
+
+        function takeAPanoPictureClicked(places, btn, pano) {
+            let placeIndexClicked = placeIndex;
+            let place = places[placeIndexClicked];
+
+            btn.disabled = true;
+
+            let povs = place._povs || [];
+            povs.push(getCurrentPOV(pano));
+
+            console.log(povs);
+
+            savePOVs(placesRef.doc(place.place_id), povs).then(function () {
+                btn.disabled = false;
+                places[placeIndexClicked]._povs = povs;
+                displayPOVs(povs, places);
+            });
+        }
+
+        function displayPOVs(povs, places) {
+          let _povs = povs || [];
+          let povsHTML = _povs.reduce(function(carry, currentPov, currentIndex) {
+              let sep = (carry != "") ? " | " : "";
+              let html = carry + sep + "<a href=\"#\" class=\"show-pov-link\" data-place-index=" + placeIndex + " data-pov-index=" + currentIndex + ">Image #" + (currentIndex + 1) + "</a>"
+                  + " <a style='vertical-align: super; font-size: small' href=\"#\" class=\"del-pov-link\" data-place-index=" + placeIndex + " data-pov-index=" + currentIndex + ">[x]</a>";
+              return html;
+          }, "");
+
+          povsHolder.innerHTML = povsHTML;
+
+          let showLinkElms = document.querySelectorAll(".show-pov-link");
+
+          showLinkElms.forEach((elm) => elm.addEventListener("click", function(e) {
+              let currentPlace = places[this.dataset.placeIndex];
+              let currentPov = currentPlace._povs[this.dataset.povIndex];
+              showPov(currentPlace, currentPov);
+          }));
+
+          let delLinkElms = document.querySelectorAll(".del-pov-link");
+
+          delLinkElms.forEach((elm) => elm.addEventListener("click", function(e) {
+              let placeIndex = this.dataset.placeIndex;
+              let currentPlace = places[placeIndex];
+
+              let povs = currentPlace._povs.filter((val, idx) => idx != this.dataset.povIndex);
+
+              savePOVs(placesRef.doc(currentPlace.place_id), povs).then(function () {
+                  places[placeIndex]._povs = povs;
+                  displayPOVs(povs, places);
+              });
+          }));
+        }
+
+        function showPov(place, pov) {
+            let $modalElm = $('#street-view-modal');
+            let $modalBodyElm = $('#street-view-modal .modal-body');
+
+            let imgSrc = getStreetViewImageWithKey(pov.latLng, pov.pov);
+
+            $modalBodyElm.html("<img src='" + imgSrc + "' />");
+
+            $modalElm.modal('show');
+        }
+
+        function updateToggleReviewedBtnText(reviewed) {
+            reviewedToggleBtn.innerHTML = (reviewed) ? "Mark as NOT reviewed [m]" : "Mark as reviewed [m]"
+        }
+
+        function toggleReviewed(placeRef, reviewed) {
+          return placeRef.update({
+              reviewed
+          });
+        }
+
+        function savePOVs(placeRef, povs) {
+          return placeRef.update({
+              _povs: povs
+          });
+        }
+
+        function getCurrentPOV(panorama) {
+
+            let location = JSON.parse(JSON.stringify(panorama.getLocation()));
+
+            let pov = panorama.getPov();
+
+            return {
+                latLng: location.latLng,
+                pov
+            }
+
+        }
+
+        function jumpTo(index, places) {
+
+            let place = places[index];
+
+            if (place == undefined) {
+                throw Error("place not found");
+            }
+            placeIndex = index;
+
+            const first = index < 1;
+            const last = (index + 1) >= places.length;
+
+            if (first) {
+                document.getElementById("prevBtn").disabled = true;
+            } else {
+                document.getElementById("prevBtn").disabled = false;
+            }
+
+            if (last) {
+                document.getElementById("nextBtn").disabled = true;
+            } else {
+                document.getElementById("nextBtn").disabled = false;
+            }
+
+            reviewedToggleBtn.disabled = false;
+            takeAFrontViewPictureBtn.disabled = false;
+            takeARearViewPictureBtn.disabled = false;
+
+            showMap(place.geometry.location);
+            updateToggleReviewedBtnText(place.reviewed);
+            displayPOVs(place._povs, places);
+
+            document.getElementById("loaded").innerHTML = " Showing " + (placeIndex + 1)
+                + " from " + places.length;
+
+            document.getElementById("name").innerHTML = place.name + " " + place.formatted_address;
+
+        }
+
+        function jumpToPrev(places) {
+            jumpTo(placeIndex - 1, places);
+        }
+
+        function jumpToNext(places) {
+            jumpTo(placeIndex + 1, places);
+        }
+
+        function showMap(position) {
+            let map = new google.maps.Map(document.getElementById('map'), {
+                center: position,
+                zoom: 16
+            });
+
+            frontPanorama = new google.maps.StreetViewPanorama(
+                document.getElementById('pano_front'), {
+                    position: position
+                });
+
+            rearViewPanorama = new google.maps.StreetViewPanorama(
+                document.getElementById('pano_back'), {
+                    position: position
+                });
+
+            let leftPanorama = new google.maps.StreetViewPanorama(
+                document.getElementById('pano_left'), {
+                    position: position
+                });
+
+            let rightPanorama = new google.maps.StreetViewPanorama(
+                document.getElementById('pano_right'), {
+                    position: position
+                });
+
+            frontPanorama.addListener('pano_changed', function (e) {
+                let pov = frontPanorama.getPhotographerPov();
+                //pov.pitch += 5;
+
+                frontPanorama.setPov(pov);
+
+                function changePanoramaPov(pano, frontPov, position, headingChange) {
+                    let pov = {
+                        heading: frontPov.heading + headingChange,
+                        pitch: frontPov.pitch
+                    };
+                    pano.setPosition(position);
+                    pano.setPov(pov);
+                }
+
+                changePanoramaPov(rearViewPanorama, pov, frontPanorama.getPosition(), -180);
+                changePanoramaPov(leftPanorama, pov, frontPanorama.getPosition(), -90);
+                changePanoramaPov(rightPanorama, pov, frontPanorama.getPosition(), -270);
+            });
+
+            frontPanorama.addListener('pano_changed', () => updateFrontViewLinkFromPanorama(frontPanorama));
+            frontPanorama.addListener('pov_changed', () => updateFrontViewLinkFromPanorama(frontPanorama));
+
+            rearViewPanorama.addListener('pano_changed', () => updateBackViewLinkFromPanorama(rearViewPanorama));
+            rearViewPanorama.addListener('pov_changed', () => updateBackViewLinkFromPanorama(rearViewPanorama));
+
+            map.setStreetView(frontPanorama);
+        }
+
+        function initialize() {
+
+
+            document.getElementById("loaded").innerHTML = "Loading...";
+            document.getElementById("prevBtn").disabled = true;
+            document.getElementById("nextBtn").disabled = true;
+            reviewedToggleBtn.disabled = true;
+            takeAFrontViewPictureBtn.disabled = true;
+            takeARearViewPictureBtn.disabled = true;
+
+
+            fetchPlaces(100).then(places => {
+
+                if (places.length > 0) {
+                    jumpTo(0, places);
+                }
+
+                document.getElementById("prevBtn").addEventListener("click", () => jumpToPrev(places));
+                document.getElementById("nextBtn").addEventListener("click", () => jumpToNext(places));
+                reviewedToggleBtn.addEventListener("click", () => reviewedClicked(places));
+                takeAFrontViewPictureBtn.addEventListener("click", () => takeAFrontViewPictureClicked(places));
+                takeARearViewPictureBtn.addEventListener("click", () => takeARearViewPictureClicked(places));
+
+
+                window.addEventListener("keydown", function(event) {
+                    if (event.preventDefaulted) {
+                        return; // Do nothing if event already handled
+                    }
+
+                    switch(event.code) {
+                        case "KeyM":
+                            reviewedClicked(places);
+                            // Consume the event so it doesn't get handled twice
+                            event.preventDefault();
+                            break;
+                        case "KeyA":
+                            jumpToPrev(places);
+                            // Consume the event so it doesn't get handled twice
+                            event.preventDefault();
+                            break;
+                        case "KeyD":
+                            jumpToNext(places);
+                            // Consume the event so it doesn't get handled twice
+                            event.preventDefault();
+                            break;
+                        case "Digit1":
+                            takeAFrontViewPictureClicked(places);
+                            // Consume the event so it doesn't get handled twice
+                            event.preventDefault();
+                            break;
+                        case "Digit2":
+                            takeARearViewPictureClicked(places);
+                            // Consume the event so it doesn't get handled twice
+                            event.preventDefault();
+                            break;
+                    }
+
+                }, true);
+
+            });
+        }
+    </script>
+
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=&libraries=places&callback=initialize">
+    </script>
+  </body>
+</html>
+
